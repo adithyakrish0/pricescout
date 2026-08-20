@@ -16,6 +16,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from config import (
+    IS_VERCEL,
+    PROXY_URL,
     cache_get,
     cache_set,
     get_logger,
@@ -43,11 +45,29 @@ FLIPKART_HEADERS = lambda: {
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
-}
+}# ── Proxy-aware fetch ──────────────────────────────────────────────────────
+def _proxy_fetch(url: str, headers: dict, timeout: int = 15) -> httpx.Response | None:
+    """Fetch a URL, routing through the CF Worker proxy on Vercel if configured."""
+    if IS_VERCEL and PROXY_URL:
+        try:
+            proxy_url = f"{PROXY_URL.rstrip('/')}/proxy"
+            payload = {"url": url, "headers": headers}
+            r = httpx.post(proxy_url, json=payload, timeout=timeout + 10)
+            if r.status_code == 200:
+                return r
+            log.warning("Proxy returned %d for %s", r.status_code, url)
+        except Exception:
+            log.exception("Proxy fetch failed for %s", url)
+
+    # Direct fetch (works locally, may fail on Vercel for Amazon)
+    client = httpx.Client(follow_redirects=True, timeout=timeout, headers=headers)
+    try:
+        return client.get(url)
+    finally:
+        client.close()
 
 
 # ── Domain detection ─────────────────────────────────────────────────────────
-
 def detect_platform(url: str) -> str | None:
     host = urlparse(url).hostname or ""
     if "amazon.in" in host or "amazon.com" in host:
@@ -91,7 +111,7 @@ def _has_flipkart_captcha(resp_text: str) -> bool:
 # ── Amazon.in scraper ────────────────────────────────────────────────────────
 
 def _fetch_amazon(url: str) -> dict[str, Any] | None:
-    """Fetch Amazon product page via httpx. Returns normalised dict or None."""
+    """Fetch Amazon product page. Uses CF Worker proxy on Vercel, direct on local."""
     domain = urlparse(url).hostname or ""
     wait_for_domain(domain)
 
@@ -99,35 +119,13 @@ def _fetch_amazon(url: str) -> dict[str, Any] | None:
     clean_url = url.split("?")[0]
 
     try:
-        # Try up to 2 requests with different header sets (Vercel IPs often get 500)
-        for attempt in range(2):
-            headers = HTTPX_HEADERS() if attempt == 0 else {
-                "User-Agent": random_ua(),
-                "Accept-Language": "en-IN,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Cache-Control": "max-age=0",
-            }
-            client = httpx.Client(follow_redirects=True, timeout=15, headers=headers)
-            t0 = time.monotonic()
-            resp = client.get(clean_url)
-            elapsed = time.monotonic() - t0
-            client.close()
+        headers = HTTPX_HEADERS()
+        t0 = time.monotonic()
+        resp = _proxy_fetch(clean_url, headers, timeout=15)
+        elapsed = time.monotonic() - t0
 
-            if resp.status_code == 200:
-                break
-
-            log.warning("Amazon attempt %d: status %d (%.1fs)", attempt + 1, resp.status_code, elapsed)
-            if attempt == 0:
-                time.sleep(1)  # brief pause before retry
-        else:
-            # All attempts failed
+        if not resp or resp.status_code != 200:
+            log.warning("Amazon: status %s (%.1fs)", resp.status_code if resp else 'None', elapsed)
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -219,11 +217,9 @@ def _fetch_flipkart(url: str) -> dict[str, Any] | None:
     wait_for_domain(domain)
 
     try:
-        client = httpx.Client(follow_redirects=True, timeout=20, headers=FLIPKART_HEADERS())
         t0 = time.monotonic()
-        resp = client.get(url)
+        resp = _proxy_fetch(url, FLIPKART_HEADERS(), timeout=20)
         elapsed = time.monotonic() - t0
-        client.close()
 
         if resp.status_code != 200:
             log.warning("Flipkart: status %d (%.1fs)", resp.status_code, elapsed)

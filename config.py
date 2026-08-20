@@ -23,6 +23,7 @@ load_dotenv()
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
 IS_VERCEL = bool(os.getenv("VERCEL"))  # Vercel sets this automatically
+PROXY_URL: str = os.getenv("PROXY_URL", "")  # Cloudflare Worker URL for bypassing datacenter IP blocks
 
 if IS_VERCEL:
     # Vercel has a read-only filesystem — use temp dir for cache, skip file logging

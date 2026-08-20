@@ -45,10 +45,31 @@ python bot.py
 
 ## Deployment
 
-Runs anywhere Python works — your PC, a free cloud VM, or even Termux on your phone. No browser or heavy dependencies needed.
+### Option 1: Run locally or via Termux (simplest, works perfectly)
+```bash
+python bot.py
+```
+
+### Option 2: Deploy to Vercel (24/7, $0)
+Amazon blocks datacenter IPs with CAPTCHAs. To fix this, deploy a Cloudflare Worker proxy:
+
+```bash
+# 1. Deploy the CF Worker proxy (free: 100K req/day)
+cd worker
+npm install -g wrangler
+wrangler login
+wrangler deploy
+# Copy your worker URL (e.g. https://pricescout-proxy.XXX.workers.dev)
+
+# 2. Push to GitHub + import into Vercel
+# Add env vars: TELEGRAM_TOKEN, GROQ_API_KEY, GROQ_API_KEY_BACKUP, PROXY_URL
+# Visit https://your-app.vercel.app/api/set_webhook to register webhook
+```
 
 ## Cost: $0
 
-- Runs locally or on free hosting
+- Runs locally, via Termux, or on free hosting
 - Groq API: free tier (no credit card needed)
-- No cloud services, no databases, no paid APIs
+- Cloudflare Worker: free tier (100K req/day)
+- Vercel: free Hobby tier
+- No paid APIs, no databases

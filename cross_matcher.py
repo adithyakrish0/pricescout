@@ -24,7 +24,7 @@ from config import (
     random_ua,
     wait_for_domain,
 )
-from product_fetcher import detect_platform
+from product_fetcher import detect_platform, _proxy_fetch
 
 log = get_logger("cross_matcher")
 
@@ -41,17 +41,29 @@ def _other_platform_search_url(title: str, source_platform: str) -> str:
 
 # ── Scrape Flipkart search results ──────────────────────────────────────────
 
-def _scrape_flipkart_search(url: str, client: httpx.Client) -> list[dict[str, Any]]:
-    """Scrape top 5 product results from a Flipkart search page via httpx."""
+def _scrape_flipkart_search(url: str) -> list[dict[str, Any]]:
+    """Scrape top 5 product results from a Flipkart search page."""
     results = []
     try:
         wait_for_domain("flipkart.com")
+        fk_headers = {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-IN,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        }
         t0 = time.monotonic()
-        resp = client.get(url)
+        resp = _proxy_fetch(url, fk_headers, timeout=20)
         elapsed = time.monotonic() - t0
 
-        if resp.status_code != 200:
-            log.warning("FK search: status %d (%.1fs)", resp.status_code, elapsed)
+        if not resp or resp.status_code != 200:
+            log.warning("FK search: status %s (%.1fs)", resp.status_code if resp else 'None', elapsed)
             return results
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -105,17 +117,18 @@ def _scrape_flipkart_search(url: str, client: httpx.Client) -> list[dict[str, An
 
 # ── Scrape Amazon search results ────────────────────────────────────────────
 
-def _scrape_amazon_search(url: str, client: httpx.Client) -> list[dict[str, Any]]:
-    """Scrape top 5 product results from an Amazon.in search page via httpx."""
+def _scrape_amazon_search(url: str) -> list[dict[str, Any]]:
+    """Scrape top 5 product results from an Amazon.in search page."""
     results = []
     try:
         wait_for_domain("amazon.in")
+        headers = {"User-Agent": random_ua(), "Accept-Language": "en-IN,en;q=0.9"}
         t0 = time.monotonic()
-        resp = client.get(url)
+        resp = _proxy_fetch(url, headers, timeout=15)
         elapsed = time.monotonic() - t0
 
-        if resp.status_code != 200:
-            log.warning("AM search: status %d (%.1fs)", resp.status_code, elapsed)
+        if not resp or resp.status_code != 200:
+            log.warning("AM search: status %s (%.1fs)", resp.status_code if resp else 'None', elapsed)
             return results
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -275,36 +288,12 @@ def cross_match(product_data: dict[str, Any], *, force: bool = False) -> dict[st
     search_url = _other_platform_search_url(title, source_platform)
     log.info("Cross-matching: searching %s for product from %s", search_url, source_platform)
 
-    # Scrape search results via httpx
-    # Flipkart requires mobile UA to avoid 403; Amazon uses random UA
+    # Scrape search results (uses proxy on Vercel, direct on local)
     other_platform = "flipkart" if source_platform == "amazon" else "amazon"
     if other_platform == "flipkart":
-        fk_headers = {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-IN,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-        }
-        client = httpx.Client(follow_redirects=True, timeout=20, headers=fk_headers)
+        candidates = _scrape_flipkart_search(search_url)
     else:
-        client = httpx.Client(
-            follow_redirects=True,
-            timeout=15,
-            headers={"User-Agent": random_ua(), "Accept-Language": "en-IN,en;q=0.9"},
-        )
-    try:
-        if other_platform == "flipkart":
-            candidates = _scrape_flipkart_search(search_url, client)
-        else:
-            candidates = _scrape_amazon_search(search_url, client)
-    finally:
-        client.close()
+        candidates = _scrape_amazon_search(search_url)
 
     if not candidates:
         log.info("No candidates found on the other platform")
