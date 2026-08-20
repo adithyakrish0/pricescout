@@ -1,0 +1,10 @@
+.git
+.cache
+logs
+__pycache__
+*.pyc
+.env
+.env.example
+README.md
+README_HF.md
+price_chart.png

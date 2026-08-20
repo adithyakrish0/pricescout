@@ -1,0 +1,8 @@
+.env
+.cache/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+price_chart.png
+.DS_Store
