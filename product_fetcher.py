@@ -95,15 +95,39 @@ def _fetch_amazon(url: str) -> dict[str, Any] | None:
     domain = urlparse(url).hostname or ""
     wait_for_domain(domain)
 
-    try:
-        client = httpx.Client(follow_redirects=True, timeout=15, headers=HTTPX_HEADERS())
-        t0 = time.monotonic()
-        resp = client.get(url)
-        elapsed = time.monotonic() - t0
-        client.close()
+    # Strip tracking query params (?th=1, ?ref=, etc.) that trigger bot detection
+    clean_url = url.split("?")[0]
 
-        if resp.status_code != 200:
-            log.warning("Amazon: status %d (%.1fs)", resp.status_code, elapsed)
+    try:
+        # Try up to 2 requests with different header sets (Vercel IPs often get 500)
+        for attempt in range(2):
+            headers = HTTPX_HEADERS() if attempt == 0 else {
+                "User-Agent": random_ua(),
+                "Accept-Language": "en-IN,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
+                "Cache-Control": "max-age=0",
+            }
+            client = httpx.Client(follow_redirects=True, timeout=15, headers=headers)
+            t0 = time.monotonic()
+            resp = client.get(clean_url)
+            elapsed = time.monotonic() - t0
+            client.close()
+
+            if resp.status_code == 200:
+                break
+
+            log.warning("Amazon attempt %d: status %d (%.1fs)", attempt + 1, resp.status_code, elapsed)
+            if attempt == 0:
+                time.sleep(1)  # brief pause before retry
+        else:
+            # All attempts failed
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")

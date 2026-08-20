@@ -276,13 +276,29 @@ def cross_match(product_data: dict[str, Any], *, force: bool = False) -> dict[st
     log.info("Cross-matching: searching %s for product from %s", search_url, source_platform)
 
     # Scrape search results via httpx
-    client = httpx.Client(
-        follow_redirects=True,
-        timeout=15,
-        headers={"User-Agent": random_ua(), "Accept-Language": "en-IN,en;q=0.9"},
-    )
+    # Flipkart requires mobile UA to avoid 403; Amazon uses random UA
+    other_platform = "flipkart" if source_platform == "amazon" else "amazon"
+    if other_platform == "flipkart":
+        fk_headers = {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-IN,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        }
+        client = httpx.Client(follow_redirects=True, timeout=20, headers=fk_headers)
+    else:
+        client = httpx.Client(
+            follow_redirects=True,
+            timeout=15,
+            headers={"User-Agent": random_ua(), "Accept-Language": "en-IN,en;q=0.9"},
+        )
     try:
-        other_platform = "flipkart" if source_platform == "amazon" else "amazon"
         if other_platform == "flipkart":
             candidates = _scrape_flipkart_search(search_url, client)
         else:
