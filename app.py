@@ -232,9 +232,8 @@ async def webhook(request: Request):
         await _send_message(chat_id, "Send me an Amazon.in or Flipkart product URL to check prices!")
         return {"status": "ok"}
 
-    # Run full handler in background — return 200 immediately
-    # so Telegram doesn't retry, then process async
-    asyncio.create_task(_safe_handle(chat_id, text))
+    # Process synchronously — Telegram waits up to 30s for response
+    await _safe_handle(chat_id, text)
     return {"status": "ok"}
 
 
@@ -294,6 +293,42 @@ async def set_webhook(request: Request):
             f"Failed: {result.get('description', 'unknown error')}",
             status_code=500,
         )
+
+
+@app.get("/api/debug")
+async def debug():
+    """Test endpoint — verifies all imports work on Vercel."""
+    results = {}
+    try:
+        import httpx
+        results["httpx"] = "ok"
+    except Exception as e:
+        results["httpx"] = str(e)
+    try:
+        import bs4
+        results["bs4"] = "ok"
+    except Exception as e:
+        results["bs4"] = str(e)
+    try:
+        import matplotlib
+        results["matplotlib"] = "ok"
+    except Exception as e:
+        results["matplotlib"] = str(e)
+    try:
+        import groq
+        results["groq"] = "ok"
+    except Exception as e:
+        results["groq"] = str(e)
+    try:
+        mods = _get_modules()
+        results["product_fetcher"] = "ok"
+        results["history_fetcher"] = "ok"
+        results["cross_matcher"] = "ok"
+        results["chart"] = "ok"
+    except Exception as e:
+        results["modules"] = str(e)
+    results["token_set"] = bool(TELEGRAM_TOKEN)
+    return results
 
 
 @app.get("/")
