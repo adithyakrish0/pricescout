@@ -499,6 +499,14 @@
             if (product && product.url) {
                 linksHtml += linkItem('🛒', 'Original listing', product.url);
 
+                // Cross-platform search link
+                const searchTerm = encodeURIComponent(product.title || '');
+                if (product.platform === 'amazon') {
+                    linksHtml += linkItem('🔄', 'Search on Flipkart', 'https://www.flipkart.com/search?q=' + searchTerm);
+                } else {
+                    linksHtml += linkItem('🔄', 'Search on Amazon', 'https://www.amazon.in/s?k=' + searchTerm);
+                }
+
                 // Extract ASIN
                 const asinMatch = product.url.match(/\/dp\/([A-Z0-9]{10})/);
                 const asin = asinMatch ? asinMatch[1] : '';
@@ -506,7 +514,7 @@
                 if (asin) {
                     linksHtml += linkItem('📊', 'PriceDiff', 'https://pricediff.in/product/amazon.in/' + asin);
                 }
-                linksHtml += linkItem('🔔', 'BuyHatke', 'https://buyhatke.com/search?q=' + encodeURIComponent(product.title || ''));
+                linksHtml += linkItem('🔔', 'BuyHatke', 'https://buyhatke.com/search?q=' + searchTerm);
                 linksHtml += linkItem('📈', 'PriceHistory', 'https://pricehistory.app/p/' + encodeURIComponent(product.url));
             }
             if (linksHtml) {

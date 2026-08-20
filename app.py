@@ -88,17 +88,26 @@ def _build_reply(product, history, match):
 
     lines.append(f"\n\U0001f517 {product.get('url', '')}")
 
-    # History site links — always show, useful fallback when scraping fails
+    # Cross-platform + history links
     product_url = product.get('url', '')
+    product_title = product.get('title', '')
     if product_url:
         import re as _re
         asin_match = _re.search(r'/dp/([A-Z0-9]{10})', product_url)
         asin = asin_match.group(1) if asin_match else ''
+        from urllib.parse import quote_plus
+        search_term = quote_plus(product_title)
         lines.append("")
-        lines.append("\U0001f4ca Check price history:")
+        lines.append("\U0001f517 Quick links:")
+        # Cross-platform search
+        platform = product.get('platform', '')
+        if platform == 'amazon':
+            lines.append(f"   \u2022 Flipkart search: https://www.flipkart.com/search?q={search_term}")
+        else:
+            lines.append(f"   \u2022 Amazon search: https://www.amazon.in/s?k={search_term}")
         if asin:
             lines.append(f"   \u2022 PriceDiff: https://pricediff.in/product/amazon.in/{asin}")
-        lines.append(f"   \u2022 BuyHatke: https://buyhatke.com/product/{product_url}")
+        lines.append(f"   \u2022 BuyHatke: https://buyhatke.com/search?q={search_term}")
         lines.append(f"   \u2022 PriceHistory: https://pricehistory.app/p/{product_url}")
 
     return "\n".join(lines)
