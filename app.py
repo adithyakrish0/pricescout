@@ -99,10 +99,19 @@ async def _handle_message(chat_id, text):
         await _send_message(chat_id, "\u274c Only Amazon.in and Flipkart URLs are supported.")
         return
 
-    await _send_message(chat_id, f"\U0001f50d Looking up product on {platform.title()}...")
+    import time
+    t0 = time.time()
+    await _send_message(chat_id, f"\U0001f50d Fetching product details from {platform.title()}...")
 
     product = await asyncio.to_thread(pf.fetch_product, url)
+    elapsed = time.time() - t0
+    if product and product.get("title"):
+        await _send_message(chat_id, f"\u2705 Product found ({elapsed:.1f}s)\n\U0001f4c8 Checking price history...")
+    else:
+        await _send_message(chat_id, f"\u23f3 Product fetch slow, trying history sources...")
+
     history = await asyncio.to_thread(hf.fetch_history, url)
+    elapsed = time.time() - t0
 
     # Merge: use history data to fill gaps
     if (not product or not product.get("title")) and history and history.get("title"):
@@ -121,7 +130,11 @@ async def _handle_message(chat_id, text):
         await _send_message(chat_id, "\u274c Could not fetch product details from any source.")
         return
 
+    await _send_message(chat_id, f"\U0001f504 Cross-matching with other platforms...")
     match = await asyncio.to_thread(cm.cross_match, product)
+    elapsed = time.time() - t0
+    await _send_message(chat_id, f"\U0001f4ca Building results ({elapsed:.1f}s total)...")
+
     reply = _build_reply(product, history, match)
 
     if history and history.get("data"):
@@ -154,8 +167,8 @@ async def webhook(request: Request):
     if not chat_id or not text:
         return {"status": "ok"}
 
-    # Fire and forget — Vercel needs a fast response
-    asyncio.create_task(_handle_message(chat_id, text))
+    # Run full handler — Telegram waits up to 60s for webhook response
+    await _handle_message(chat_id, text)
     return {"status": "ok"}
 
 
