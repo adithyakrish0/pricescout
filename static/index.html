@@ -512,18 +512,16 @@
                 const asin = asinMatch ? asinMatch[1] : '';
                 const cleanUrl = product.url.split('?')[0];
 
-                // PriceHistory — correct format uses ASIN, not encoded full URL
-                if (asin) {
-                    linksHtml += linkItem('\u{1f4c8}', 'PriceHistory', 'https://pricehistory.app/p/amazon.in/dp/' + asin);
-                } else {
-                    linksHtml += linkItem('\u{1f4c8}', 'PriceHistory', 'https://pricehistory.app');
-                }
+                // BuyHatke — direct product page link
+                const cleanUrl = product.url.split('?')[0];
+                linksHtml += linkItem('\u{1f514}', 'BuyHatke', 'https://buyhatke.com/search/' + encodeURIComponent(cleanUrl));
 
-                // BuyHatke — paste product URL on their site
-                linksHtml += linkItem('\u{1f514}', 'BuyHatke', 'https://buyhatke.com');
+                // Google Shopping — always works as direct link
+                linksHtml += linkItem('\u{1f4c8}', 'Google Shopping', 'https://www.google.com/search?q=' + searchTerm + '&tbm=shop');
 
-                // PriceDiff — paste product URL on their site
+                // PriceHistory sites — require pasting the link
                 linksHtml += linkItem('\u{1f4ca}', 'PriceDiff', 'https://pricediff.in');
+                linksHtml += linkItem('\u{1f4b0}', 'PriceHistory', 'https://pricehistory.app');
             }
             if (linksHtml) {
                 $('links-grid').innerHTML = linksHtml;
