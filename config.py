@@ -57,7 +57,8 @@ def random_ua() -> str:
 
 
 # ── Rate limiter (per-domain) ────────────────────────────────────────────────
-MIN_INTERVAL_SEC: float = float(os.getenv("MIN_INTERVAL_SEC", "2.0"))
+_min_raw = os.getenv("MIN_INTERVAL_SEC", "2.0")
+MIN_INTERVAL_SEC: float = float(_min_raw) if _min_raw else 2.0
 
 _domain_locks: dict[str, float] = {}
 _domain_locks_lock = Lock()
@@ -75,7 +76,8 @@ def wait_for_domain(domain: str) -> None:
 
 
 # ── Cache (JSON files, 6-hour TTL) ──────────────────────────────────────────
-CACHE_TTL_SEC: int = int(os.getenv("CACHE_TTL_SEC", str(6 * 3600)))
+_cache_raw = os.getenv("CACHE_TTL_SEC", str(6 * 3600))
+CACHE_TTL_SEC: int = int(_cache_raw) if _cache_raw else 6 * 3600
 
 
 def _cache_key(url: str) -> Path:
