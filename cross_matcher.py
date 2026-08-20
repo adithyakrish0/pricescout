@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -45,9 +46,9 @@ def _scrape_flipkart_search(url: str, client: httpx.Client) -> list[dict[str, An
     results = []
     try:
         wait_for_domain("flipkart.com")
-        t0 = __import__("time").monotonic()
+        t0 = time.monotonic()
         resp = client.get(url)
-        elapsed = __import__("time").monotonic() - t0
+        elapsed = time.monotonic() - t0
 
         if resp.status_code != 200:
             log.warning("FK search: status %d (%.1fs)", resp.status_code, elapsed)
@@ -109,9 +110,9 @@ def _scrape_amazon_search(url: str, client: httpx.Client) -> list[dict[str, Any]
     results = []
     try:
         wait_for_domain("amazon.in")
-        t0 = __import__("time").monotonic()
+        t0 = time.monotonic()
         resp = client.get(url)
-        elapsed = __import__("time").monotonic() - t0
+        elapsed = time.monotonic() - t0
 
         if resp.status_code != 200:
             log.warning("AM search: status %d (%.1fs)", resp.status_code, elapsed)

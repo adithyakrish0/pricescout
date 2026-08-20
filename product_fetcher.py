@@ -60,13 +60,14 @@ def detect_platform(url: str) -> str | None:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _clean_price(text: str | None) -> int | None:
+    """Parse a price string like '₹1,299.00' or '1299' into an integer in rupees."""
     if not text:
         return None
     cleaned = re.sub(r"[^\d.]", "", text.strip())
     if not cleaned:
         return None
     try:
-        return int(float(cleaned))
+        return round(float(cleaned))
     except ValueError:
         return None
 
@@ -121,7 +122,7 @@ def _fetch_amazon(url: str) -> dict[str, Any] | None:
             log.warning("Amazon: empty title (%.1fs)", elapsed)
             return None
 
-        # Price — DOM selectors first (human-readable ₹), then JSON-LD (may be paise)
+        # Price — DOM selectors first (human-readable ₹), then JSON-LD
         product["price"] = None
         for sel in [
             "span.a-price .a-offscreen",
@@ -140,13 +141,20 @@ def _fetch_amazon(url: str) -> dict[str, Any] | None:
             if jsonld and jsonld.string:
                 try:
                     ld = json.loads(jsonld.string)
-                    raw_price = ld.get("offers", {}).get("price", "")
-                    currency = ld.get("offers", {}).get("priceCurrency", "INR")
-                    product["price"] = _clean_price(str(raw_price))
-                    # Amazon IN JSON-LD returns paise (129900 = ₹1,299)
-                    if product["price"] and currency == "INR" and product["price"] > 10000:
-                        product["price"] = product["price"] // 100
-                    product["availability"] = ld.get("offers", {}).get("availability", "")
+                    offers = ld.get("offers", {})
+                    raw_price = str(offers.get("price", ""))
+                    currency = offers.get("priceCurrency", "INR")
+                    # Amazon IN JSON-LD often returns paise (e.g. 129900 = ₹1,299)
+                    # Detect by checking if the raw number is > 100x the DOM price,
+                    # or if it has no decimal point and is > 5 digits (likely paise)
+                    parsed = _clean_price(raw_price)
+                    if parsed and currency == "INR":
+                        # If DOM selectors gave us nothing, and the JSON-LD value
+                        # looks like paise (> 5 digits without decimal), divide by 100
+                        if not product.get("price") and len(raw_price.replace(".", "")) > 5:
+                            parsed = round(parsed / 100)
+                    product["price"] = parsed
+                    product["availability"] = offers.get("availability", "")
                 except (json.JSONDecodeError, ValueError):
                     pass
 
