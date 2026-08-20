@@ -5,3 +5,5 @@ matplotlib>=3.8
 beautifulsoup4>=4.12
 groq>=0.11
 rich>=13.0
+fastapi>=0.115.0
+
