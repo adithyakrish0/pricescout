@@ -31,6 +31,20 @@ HTTPX_HEADERS = lambda: {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+# Flipkart requires mobile-like headers to avoid reCAPTCHA
+FLIPKART_HEADERS = lambda: {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-IN,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+
 
 # ── Domain detection ─────────────────────────────────────────────────────────
 
@@ -63,7 +77,14 @@ def _normalise_url(url: str) -> str:
 
 
 def _has_captcha(soup: BeautifulSoup) -> bool:
-    return soup.find("form", {"action": re.compile("validateCaptcha")}) is not None
+    return (
+        soup.find("form", {"action": re.compile("validateCaptcha")}) is not None
+        or "recaptcha" in soup.title.get_text().lower() if soup.title else False
+    )
+
+
+def _has_flipkart_captcha(resp_text: str) -> bool:
+    return "recaptcha" in resp_text.lower()[:2000]
 
 
 # ── Amazon.in scraper ────────────────────────────────────────────────────────
@@ -166,7 +187,7 @@ def _fetch_flipkart(url: str) -> dict[str, Any] | None:
     wait_for_domain(domain)
 
     try:
-        client = httpx.Client(follow_redirects=True, timeout=15, headers=HTTPX_HEADERS())
+        client = httpx.Client(follow_redirects=True, timeout=20, headers=FLIPKART_HEADERS())
         t0 = time.monotonic()
         resp = client.get(url)
         elapsed = time.monotonic() - t0
@@ -174,6 +195,10 @@ def _fetch_flipkart(url: str) -> dict[str, Any] | None:
 
         if resp.status_code != 200:
             log.warning("Flipkart: status %d (%.1fs)", resp.status_code, elapsed)
+            return None
+
+        if _has_flipkart_captcha(resp.text):
+            log.warning("Flipkart: reCAPTCHA detected (%.1fs)", elapsed)
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")

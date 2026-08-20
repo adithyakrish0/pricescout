@@ -11,7 +11,7 @@ import json
 import re
 import time
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -37,28 +37,42 @@ def _httpx_client() -> httpx.Client:
 
 def _adapter_pricehistory_app(url: str, client: httpx.Client) -> dict[str, Any] | None:
     """
-    pricehistory.app — scrape the Next.js page for __NEXT_DATA__.
-    Returns {title, current_price, history: [{date, price}]} or None.
+    pricehistory.app — scrape the page for embedded price data.
     """
     domain = "pricehistory.app"
     try:
         wait_for_domain(domain)
         t0 = time.monotonic()
 
-        # Try page scrape with the raw product URL
-        page_url = f"https://pricehistory.app/p/{url}"
-        resp = client.get(page_url)
+        # Try multiple URL formats
+        asin = _extract_asin(url)
+        page_urls = []
+        if asin:
+            page_urls = [
+                f"https://pricehistory.app/p/amazon.in/dp/{asin}",
+                f"https://pricehistory.app/p/{url}",
+                f"https://pricehistory.app/p/{quote_plus(url)}",
+            ]
+        else:
+            page_urls = [
+                f"https://pricehistory.app/p/{url}",
+                f"https://pricehistory.app/p/{quote_plus(url)}",
+            ]
+
+        resp = None
+        for page_url in page_urls:
+            try:
+                wait_for_domain(domain)
+                r = client.get(page_url, headers={"User-Agent": random_ua()})
+                if r.status_code == 200 and "recaptcha" not in r.text.lower()[:1000]:
+                    resp = r
+                    break
+            except Exception:
+                continue
+
         elapsed = time.monotonic() - t0
-
-        if resp.status_code != 200:
-            # Try encoded URL
-            wait_for_domain(domain)
-            page_url2 = f"https://pricehistory.app/p/{quote_plus(url)}"
-            resp = client.get(page_url2)
-            elapsed = time.monotonic() - t0
-
-        if resp.status_code != 200:
-            log.warning("pricehistory.app: status %d (%.1fs)", resp.status_code, elapsed)
+        if not resp or resp.status_code != 200:
+            log.warning("pricehistory.app: no working URL found (%.1fs)", elapsed)
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -74,7 +88,6 @@ def _adapter_pricehistory_app(url: str, client: httpx.Client) -> dict[str, Any] 
             log.warning("pricehistory.app: no product data (%.1fs)", elapsed)
             return None
 
-        # Extract data
         title = product.get("name", product.get("title", ""))
         current_price = product.get("currentPrice", product.get("price"))
         if isinstance(current_price, str):
@@ -102,23 +115,36 @@ def _adapter_pricehistory_app(url: str, client: httpx.Client) -> dict[str, Any] 
 # ── Adapter: pricediff.in ───────────────────────────────────────────────────
 
 def _adapter_pricediff_in(url: str, client: httpx.Client) -> dict[str, Any] | None:
-    """pricediff.in — try their page for embedded chart data."""
+    """pricediff.in — scrape the page for embedded chart data."""
     domain = "pricediff.in"
     try:
         wait_for_domain(domain)
         t0 = time.monotonic()
 
-        page_url = f"https://pricediff.in/product/{quote_plus(url)}"
-        resp = client.get(page_url)
-        elapsed = time.monotonic() - t0
+        asin = _extract_asin(url)
+        page_urls = []
+        if asin:
+            page_urls = [f"https://pricediff.in/product/amazon.in/{asin}"]
+        page_urls.append(f"https://pricediff.in/product/{quote_plus(url)}")
 
-        if resp.status_code != 200:
-            log.warning("pricediff.in: status %d (%.1fs)", resp.status_code, elapsed)
+        resp = None
+        for page_url in page_urls:
+            try:
+                wait_for_domain(domain)
+                r = client.get(page_url, headers={"User-Agent": random_ua()})
+                if r.status_code == 200:
+                    resp = r
+                    break
+            except Exception:
+                continue
+
+        elapsed = time.monotonic() - t0
+        if not resp or resp.status_code != 200:
+            log.warning("pricediff.in: no working URL (%.1fs)", elapsed)
             return None
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Look for JSON data in script tags
         history = []
         title = ""
         current_price = None
@@ -128,7 +154,6 @@ def _adapter_pricediff_in(url: str, client: httpx.Client) -> dict[str, Any] | No
                 continue
             text = script.string
 
-            # Look for price history arrays
             for pattern in [
                 r'"prices"\s*:\s*(\[.*?\])',
                 r'"history"\s*:\s*(\[.*?\])',
@@ -149,13 +174,11 @@ def _adapter_pricediff_in(url: str, client: httpx.Client) -> dict[str, Any] | No
                     except (json.JSONDecodeError, ValueError):
                         continue
 
-            # Look for product title
             if not title:
                 match = re.search(r'"name"\s*:\s*"([^"]+)"', text)
                 if match:
                     title = match.group(1)
 
-            # Look for current price
             if not current_price:
                 match = re.search(r'"currentPrice"\s*:\s*(\d+)', text)
                 if match:
@@ -196,12 +219,10 @@ def _adapter_buyhatke(url: str, client: httpx.Client) -> dict[str, Any] | None:
         data = resp.json()
         log.info("buyhatke: keys=%s (%.1fs)", list(data.keys())[:8], elapsed)
 
-        # buyhatke returns various shapes
         history = []
         title = ""
         current_price = None
 
-        # Try to extract history from various possible keys
         for key in ["data", "prices", "history", "pricePoints"]:
             if key in data and isinstance(data[key], list):
                 for item in data[key]:
@@ -212,7 +233,6 @@ def _adapter_buyhatke(url: str, client: httpx.Client) -> dict[str, Any] | None:
                             history.append({"date": str(d), "price": int(p)})
                 break
 
-        # Extract metadata
         if isinstance(data, dict):
             title = data.get("name", data.get("title", ""))
             current_price = data.get("currentPrice", data.get("latestPrice"))
@@ -228,12 +248,90 @@ def _adapter_buyhatke(url: str, client: httpx.Client) -> dict[str, Any] | None:
         return None
 
 
+# ── Adapter: Google Shopping (fallback — extracts current prices) ────────────
+
+def _adapter_google_shopping(url: str, client: httpx.Client) -> dict[str, Any] | None:
+    """Google Shopping — search for the product and extract prices."""
+    try:
+        asin = _extract_asin(url)
+        if not asin:
+            return None
+
+        wait_for_domain("google.com")
+        t0 = time.monotonic()
+
+        search_url = f"https://www.google.com/search?q=amazon.in+{asin}+price+history&tbm=shop"
+        resp = client.get(search_url, headers={"User-Agent": random_ua()})
+        elapsed = time.monotonic() - t0
+
+        if resp.status_code != 200:
+            log.warning("google shopping: status %d (%.1fs)", resp.status_code, elapsed)
+            return None
+
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Extract prices from Google Shopping results
+        history = []
+        for el in soup.select("span[data-is-price]"):
+            price_text = el.get_text(strip=True)
+            price = _clean_price(price_text)
+            if price and price > 100:
+                history.append({"date": time.strftime("%Y-%m-%d"), "price": price})
+
+        # Also try other price selectors
+        for el in soup.select("div[data-sh-or] span, span.a8Pemb"):
+            price_text = el.get_text(strip=True)
+            if "₹" in price_text or price_text.replace(",", "").isdigit():
+                price = _clean_price(price_text)
+                if price and price > 100:
+                    history.append({"date": time.strftime("%Y-%m-%d"), "price": price})
+
+        log.info(
+            "google shopping: found %d prices (%.1fs)",
+            len(history), elapsed,
+        )
+
+        if history:
+            return {"title": "", "current_price": history[0]["price"], "history": history}
+        return None
+
+    except Exception:
+        log.exception("google shopping adapter failed")
+        return None
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _extract_asin(url: str) -> str | None:
+    """Extract ASIN from Amazon URL."""
+    match = re.search(r"/dp/([A-Z0-9]{10})", url)
+    if match:
+        return match.group(1)
+    match = re.search(r"/gp/product/([A-Z0-9]{10})", url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _clean_price(text: str | None) -> int | None:
+    if not text:
+        return None
+    cleaned = re.sub(r"[^\d]", "", text.strip())
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return None
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
+# pricehistory.app dropped — Cloudflare bot-blocked, dead end at $0 budget
 ADAPTERS = [
-    ("pricehistory.app", _adapter_pricehistory_app),
     ("pricediff.in", _adapter_pricediff_in),
     ("buyhatke", _adapter_buyhatke),
+    ("google_shopping", _adapter_google_shopping),
 ]
 
 
