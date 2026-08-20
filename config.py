@@ -22,10 +22,19 @@ load_dotenv()
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-CACHE_DIR = BASE_DIR / ".cache"
-LOG_DIR = BASE_DIR / "logs"
-CACHE_DIR.mkdir(exist_ok=True)
-LOG_DIR.mkdir(exist_ok=True)
+IS_VERCEL = bool(os.getenv("VERCEL"))  # Vercel sets this automatically
+
+if IS_VERCEL:
+    # Vercel has a read-only filesystem — use temp dir for cache, skip file logging
+    import tempfile
+    CACHE_DIR = Path(tempfile.gettempdir()) / "pricescout_cache"
+    CACHE_DIR.mkdir(exist_ok=True)
+    LOG_DIR = None
+else:
+    CACHE_DIR = BASE_DIR / ".cache"
+    LOG_DIR = BASE_DIR / "logs"
+    CACHE_DIR.mkdir(exist_ok=True)
+    LOG_DIR.mkdir(exist_ok=True)
 
 # ── API keys ─────────────────────────────────────────────────────────────────
 TELEGRAM_TOKEN: str = os.getenv("TELEGRAM_TOKEN", "")
@@ -104,8 +113,12 @@ def get_logger(name: str) -> logging.Logger:
         ch.setLevel(logging.INFO)
         ch.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(message)s", "%H:%M:%S"))
         logger.addHandler(ch)
-        fh = logging.FileHandler(LOG_DIR / "pricescout.log", encoding="utf-8")
-        fh.setLevel(logging.DEBUG)
-        fh.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s"))
-        logger.addHandler(fh)
+        if LOG_DIR is not None:
+            try:
+                fh = logging.FileHandler(LOG_DIR / "pricescout.log", encoding="utf-8")
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s"))
+                logger.addHandler(fh)
+            except Exception:
+                pass
     return logger
