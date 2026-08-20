@@ -497,25 +497,33 @@
             // Links
             let linksHtml = '';
             if (product && product.url) {
-                linksHtml += linkItem('🛒', 'Original listing', product.url);
+                linksHtml += linkItem('\u{1f6d2}', 'Original listing', product.url);
 
                 // Cross-platform search link
                 const searchTerm = encodeURIComponent(product.title || '');
                 if (product.platform === 'amazon') {
-                    linksHtml += linkItem('🔄', 'Search on Flipkart', 'https://www.flipkart.com/search?q=' + searchTerm);
+                    linksHtml += linkItem('\u{1f504}', 'Search on Flipkart', 'https://www.flipkart.com/search?q=' + searchTerm);
                 } else {
-                    linksHtml += linkItem('🔄', 'Search on Amazon', 'https://www.amazon.in/s?k=' + searchTerm);
+                    linksHtml += linkItem('\u{1f504}', 'Search on Amazon', 'https://www.amazon.in/s?k=' + searchTerm);
                 }
 
-                // Extract ASIN
+                // Extract ASIN from URL
                 const asinMatch = product.url.match(/\/dp\/([A-Z0-9]{10})/);
                 const asin = asinMatch ? asinMatch[1] : '';
+                const cleanUrl = product.url.split('?')[0];
 
+                // PriceHistory — correct format uses ASIN, not encoded full URL
                 if (asin) {
-                    linksHtml += linkItem('📊', 'PriceDiff', 'https://pricediff.in/product/amazon.in/' + asin);
+                    linksHtml += linkItem('\u{1f4c8}', 'PriceHistory', 'https://pricehistory.app/p/amazon.in/dp/' + asin);
+                } else {
+                    linksHtml += linkItem('\u{1f4c8}', 'PriceHistory', 'https://pricehistory.app');
                 }
-                linksHtml += linkItem('🔔', 'BuyHatke', 'https://buyhatke.com/search?q=' + searchTerm);
-                linksHtml += linkItem('📈', 'PriceHistory', 'https://pricehistory.app/p/' + encodeURIComponent(product.url));
+
+                // BuyHatke — paste product URL on their site
+                linksHtml += linkItem('\u{1f514}', 'BuyHatke', 'https://buyhatke.com');
+
+                // PriceDiff — paste product URL on their site
+                linksHtml += linkItem('\u{1f4ca}', 'PriceDiff', 'https://pricediff.in');
             }
             if (linksHtml) {
                 $('links-grid').innerHTML = linksHtml;

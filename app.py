@@ -106,9 +106,9 @@ def _build_reply(product, history, match):
         else:
             lines.append(f"   \u2022 Amazon search: https://www.amazon.in/s?k={search_term}")
         if asin:
-            lines.append(f"   \u2022 PriceDiff: https://pricediff.in/product/amazon.in/{asin}")
-        lines.append(f"   \u2022 BuyHatke: https://buyhatke.com/search?q={search_term}")
-        lines.append(f"   \u2022 PriceHistory: https://pricehistory.app/p/{product_url}")
+            lines.append(f"   \u2022 PriceHistory: https://pricehistory.app/p/amazon.in/dp/{asin}")
+        lines.append(f"   \u2022 BuyHatke: https://buyhatke.com")
+        lines.append(f"   \u2022 PriceDiff: https://pricediff.in")
 
     return "\n".join(lines)
 
